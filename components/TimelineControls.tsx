@@ -17,8 +17,9 @@ interface TimelineControlsProps {
   maxDate: number; // timestamp
 }
 
-const PlaybackButton: React.FC<{ onClick: () => void; children: React.ReactNode; title: string }> = ({ onClick, children, title }) => (
+const PlaybackButton: React.FC<{ onClick: () => void; children: React.ReactNode; title: string; id?: string }> = ({ onClick, children, title, id }) => (
   <button
+    id={id}
     onClick={onClick}
     title={title}
     className={`p-2 rounded-md bg-neutral-800/50 text-neutral-200 hover:bg-neutral-700/60 border border-neutral-700/80 transition-colors focus:outline-none focus:ring-1 focus:ring-neutral-400`}
@@ -27,8 +28,9 @@ const PlaybackButton: React.FC<{ onClick: () => void; children: React.ReactNode;
   </button>
 );
 
-const SpeedButton: React.FC<{ onClick: () => void; isActive: boolean; children: React.ReactNode }> = ({ onClick, isActive, children }) => (
+const SpeedButton: React.FC<{ onClick: () => void; isActive: boolean; children: React.ReactNode; id?: string }> = ({ onClick, isActive, children, id }) => (
  <button
+    id={id}
     onClick={onClick}
     className={`px-3 py-1 text-xs rounded border transition-colors ${
       isActive
@@ -56,7 +58,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
 
   const nowTimestamp = Date.now();
   const totalDuration = maxDate - minDate;
-  let nowPositionPercent = -1; // Default to off-screen
+  let nowPositionPercent = -1;
 
   if (totalDuration > 0 && nowTimestamp >= minDate && nowTimestamp <= maxDate) {
     nowPositionPercent = ((nowTimestamp - minDate) / totalDuration) * 100;
@@ -67,11 +69,11 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
     <div className={`fixed bottom-5 left-1/2 -translate-x-1/2 w-11/12 lg:w-4/5 lg:max-w-3xl bg-neutral-950/80 backdrop-blur-md border border-neutral-800/90 rounded-lg p-3 shadow-xl text-neutral-300 space-y-2`}>
       <div className="flex items-center space-x-2 md:space-x-3">
         <label htmlFor="timeline-scrubber" className="hidden md:block text-sm font-medium whitespace-nowrap">Time Control:</label>
-        <PlaybackButton onClick={() => onStepFrame(-1)} title="Previous Frame"><PrevIcon className="w-4 h-4" /></PlaybackButton>
-        <PlaybackButton onClick={onPlayPause} title={isPlaying ? "Pause" : "Play"}>
+        <PlaybackButton id="timeline-back-step-button" onClick={() => onStepFrame(-1)} title="Previous Frame"><PrevIcon className="w-4 h-4" /></PlaybackButton>
+        <PlaybackButton id="timeline-play-pause-button" onClick={onPlayPause} title={isPlaying ? "Pause" : "Play"}>
           {isPlaying ? <PauseIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />}
         </PlaybackButton>
-        <PlaybackButton onClick={() => onStepFrame(1)} title="Next Frame"><NextIcon className="w-4 h-4" /></PlaybackButton>
+        <PlaybackButton id="timeline-forward-step-button" onClick={() => onStepFrame(1)} title="Next Frame"><NextIcon className="w-4 h-4" /></PlaybackButton>
         
         <div className="relative flex-grow flex items-center h-5">
             <input
@@ -106,10 +108,10 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
       </div>
       <div className="flex items-center space-x-2 justify-center">
         <span className="text-sm">Speed:</span>
-        <SpeedButton onClick={() => onSetSpeed(0.5)} isActive={playbackSpeed === 0.5}>0.5x</SpeedButton>
-        <SpeedButton onClick={() => onSetSpeed(1)} isActive={playbackSpeed === 1}>1x</SpeedButton>
-        <SpeedButton onClick={() => onSetSpeed(2)} isActive={playbackSpeed === 2}>2x</SpeedButton>
-        <SpeedButton onClick={() => onSetSpeed(5)} isActive={playbackSpeed === 5}>5x</SpeedButton>
+        <SpeedButton id="timeline-speed-05x-button" onClick={() => onSetSpeed(0.5)} isActive={playbackSpeed === 0.5}>0.5x</SpeedButton>
+        <SpeedButton id="timeline-speed-1x-button" onClick={() => onSetSpeed(1)} isActive={playbackSpeed === 1}>1x</SpeedButton>
+        <SpeedButton id="timeline-speed-2x-button" onClick={() => onSetSpeed(2)} isActive={playbackSpeed === 2}>2x</SpeedButton>
+        <SpeedButton id="timeline-speed-5x-button" onClick={() => onSetSpeed(5)} isActive={playbackSpeed === 5}>5x</SpeedButton>
       </div>
     </div>
   );

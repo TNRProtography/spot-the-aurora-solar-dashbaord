@@ -1,4 +1,4 @@
-// --- START OF FILE SettingsModal.tsx ---
+// --- START OF FILE src/components/SettingsModal.tsx ---
 
 import React, { useState, useEffect, useCallback } from 'react';
 import CloseIcon from './icons/CloseIcon';
@@ -7,16 +7,16 @@ import {
   getNotificationPreference, 
   setNotificationPreference,
   requestNotificationPermission,
-  // We don't need sendTestNotification for now, but no harm in keeping the import
   sendTestNotification 
 } from '../utils/notifications.ts';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  appVersion: string; 
+  onShowTutorial: () => void;
 }
 
-// These categories are no longer displayed, but we can keep the definition for when the feature is ready.
 const NOTIFICATION_CATEGORIES = [
   { id: 'aurora-50percent', label: 'Aurora Forecast ≥ 50%' },
   { id: 'aurora-80percent', label: 'Aurora Forecast ≥ 80%' },
@@ -28,15 +28,26 @@ const NOTIFICATION_CATEGORIES = [
 
 const LOCATION_PREF_KEY = 'location_preference_use_gps_autodetect';
 
+const GuideIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+  </svg>
+);
+
+const MailIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+  </svg>
+);
+
 const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
   </svg>
 );
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion, onShowTutorial }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
-  // We keep the state logic, even if the UI is hidden, so it doesn't break anything.
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
   const [useGpsAutoDetect, setUseGpsAutoDetect] = useState<boolean>(true);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -91,7 +102,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     setNotificationStatus(permission);
   }, []);
 
-  // Other handlers are kept for when we re-enable the features.
   const handleNotificationToggle = useCallback((id: string, checked: boolean) => {
     setNotificationSettings(prev => ({ ...prev, [id]: checked }));
     setNotificationPreference(id, checked);
@@ -120,7 +130,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
   return (
     <div 
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex justify-center items-center p-4"
+      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[3000] flex justify-center items-center p-4" 
       onClick={onClose}
     >
       <div 
@@ -134,8 +144,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           </button>
         </div>
         
-        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-6 flex-1">
-          {/* App Installation Section - Unchanged */}
+        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-8 flex-1">
+          {/* App Installation Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">App Installation</h3>
             {isAppInstalled ? (
@@ -160,10 +170,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             )}
           </section>
 
-          {/* --- MODIFIED NOTIFICATION SECTION --- */}
+          {/* Notification Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Notifications</h3>
-            {/* These permission states are still relevant */}
             {notificationStatus === 'unsupported' && <p className="text-red-400 text-sm mb-4">Your browser does not support web notifications.</p>}
             {notificationStatus === 'denied' && <div className="bg-red-900/30 border border-red-700/50 rounded-md p-3 mb-4 text-sm"><p className="text-red-300">Notification permission denied. Please enable them in your browser settings to receive future alerts.</p></div>}
             {notificationStatus === 'default' && (
@@ -173,29 +182,55 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
               </div>
             )}
             
-            {/* If permission is granted, show the new "Coming Soon" message */}
             {notificationStatus === 'granted' && (
               <div className="space-y-4">
                 <p className="text-green-400 text-sm">Notifications are enabled.</p>
-                
                 <div className="bg-neutral-800/50 border border-neutral-700/50 rounded-md p-4 text-center">
                     <h4 className="font-semibold text-neutral-300">Custom Alerts Coming Soon!</h4>
                     <p className="text-sm text-neutral-400 mt-2">
                         The ability to customize which alerts you receive is under development.
-                        For now, your device is ready to receive critical notifications once the feature is fully launched.
+                        For now, you are set to receive critical notifications.
                     </p>
                 </div>
               </div>
             )}
           </section>
 
-          {/* Location Settings Section - Unchanged */}
+          {/* Location Settings Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Location Settings</h3>
             <p className="text-sm text-neutral-400 mb-4">Control how your location is determined for features like the Aurora Sighting Map.</p>
             <ToggleSwitch label="Auto-detect Location (GPS)" checked={useGpsAutoDetect} onChange={handleGpsToggle} />
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
           </section>
+
+          {/* MODIFIED: Help & Support Section with Email button */}
+          <section>
+            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Help & Support</h3>
+            <p className="text-sm text-neutral-400 mb-4">
+              Have feedback, a feature request, or need support? Restart the welcome tutorial or send an email.
+            </p>
+            <div className="flex flex-wrap items-center gap-4">
+              <button 
+                onClick={onShowTutorial} 
+                className="flex items-center space-x-2 px-4 py-2 bg-neutral-700/80 border border-neutral-600/80 rounded-md text-neutral-200 hover:bg-neutral-600/90 transition-colors"
+              >
+                <GuideIcon className="w-5 h-5" />
+                <span>Show App Tutorial</span>
+              </button>
+              <a 
+                href="mailto:help@spottheaurora.co.nz?subject=Spot%20The%20Aurora%20Support" // MODIFIED: Added subject parameter
+                className="flex items-center space-x-2 px-4 py-2 bg-neutral-700/80 border border-neutral-600/80 rounded-md text-neutral-200 hover:bg-neutral-600/90 transition-colors"
+              >
+                <MailIcon className="w-5 h-5" />
+                <span>Email for Support</span>
+              </a>
+            </div>
+          </section>
+        </div>
+        
+        <div className="p-4 border-t border-neutral-700/80 text-right text-xs text-neutral-500">
+          Version: {appVersion}
         </div>
       </div>
     </div>
@@ -203,4 +238,4 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 };
 
 export default SettingsModal;
-// --- END OF FILE SettingsModal.tsx ---
+// --- END OF FILE src/components/SettingsModal.tsx ---
