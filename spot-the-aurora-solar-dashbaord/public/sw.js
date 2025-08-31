@@ -1,104 +1,205 @@
-// public/sw.js - Network-Only Strategy with Push and Notification Click Handlers
+// --- START OF FILE public/sw.js ---
 
-const CACHE_NAME = 'cme-modeler-cache-v32-network-only'; // New version name to force update
+// MODIFIED: Renamed the main cache and added a new dedicated cache for static assets
+const APP_CACHE_NAME = 'cme-modeler-app-cache-v39'; // Incremented version
+const STATIC_ASSETS_CACHE_NAME = 'static-assets-cache-v1';
 
-// INSTALL: The service worker now installs but does not pre-cache anything.
-self.addEventListener('install', (event) => {
-  console.log('[Service Worker] Install');
-  // We are not caching the app shell anymore to ensure freshness on every load.
-  self.skipWaiting(); // Forces the waiting service worker to become the active service worker
-});
+// MODIFIED: Added a list of static assets to cache on install
+const STATIC_ASSETS_TO_CACHE = [
+  '/background-aurora.jpg',
+  '/background-solar.jpg',
+  'https://upload.wikimedia.org/wikipedia/commons/6/60/ESO_-_Milky_Way.jpg'
+];
 
-// ACTIVATE: Clean up all old caches.
-self.addEventListener('activate', (event) => {
-  console.log('[Service Worker] Activate');
-  event.waitUntil(
-    caches.keys().then((keyList) => {
-      return Promise.all(keyList.map((key) => {
-        // Only delete caches that don't match the current CACHE_NAME.
-        // If your caching strategy changes in the future, be careful with this.
-        if (key !== CACHE_NAME) {
-            console.log('[Service Worker] Removing old cache', key);
-            return caches.delete(key);
-        }
-        return Promise.resolve(); // Do not delete current cache
-      }));
-    })
-  );
-  return self.clients.claim(); // Makes the current service worker control all clients immediately
-});
+/**
+ * Fallback endpoints:
+ * 1) Your push-notification worker (correct one for LATEST_ALERT payloads)
+ */
+const FALLBACK_ENDPOINTS = [
+  'https://push-notification-worker.thenamesrock.workers.dev/get-latest-alert',
+];
 
-// FETCH: Always fetch from the network.
-self.addEventListener('fetch', (event) => {
-  // We are bypassing the cache and going directly to the network.
-  // This ensures that all resources (app files, API data) are always fresh.
-  event.respondWith(
-    fetch(event.request).catch((error) => {
-      console.error('[Service Worker] Fetch failed:', error);
-      // Optional: Return a custom offline response if the network fails.
-      // This is less critical for a "network-only" strategy for a dashboard,
-      // but still good practice for robustness.
-      return new Response(
-        '<h1>Network Error</h1><p>Please check your internet connection.</p>',
-        { headers: { 'Content-Type': 'text/html' }, status: 503, statusText: 'Service Unavailable' }
-      );
-    })
-  );
-});
+const GENERIC_BODY = 'New activity detected. Open the app for details.';
+const DEFAULT_TAG = 'spot-the-aurora-alert';
+const RETRY_DELAYS = [0, 600, 1200];
 
-// --- New: Push Notification Handling ---
+// Simple helper: pick icons based on category/topic/tag
+function chooseIcons(tagOrCategory) {
+  const key = String(tagOrCategory || '').toLowerCase();
 
-self.addEventListener('push', (event) => {
-  console.log('[Service Worker] Push event received!', event);
-
-  let data;
-  try {
-    data = event.data ? event.data.json() : {};
-  } catch (e) {
-    console.error('[Service Worker] Failed to parse push data:', e);
-    data = { title: 'Notification', body: 'New update from solar dashboard.' };
+  // Flares
+  if (key.startsWith('flare-')) {
+    return {
+      icon: '/icons/flare_icon192.png',
+      badge: '/icons/flare_icon72.png',
+    };
   }
 
-  const title = data.title || 'Solar Dashboard Alert';
-  const options = {
-    body: data.body || 'Something new happened on your solar dashboard!',
-    icon: data.icon || '/icons/android-chrome-192x192.png', // Ensure this path is correct relative to root
-    badge: data.badge || '/icons/android-chrome-192x192.png', // For Android badges
-    vibrate: data.vibrate || [200, 100, 200], // Standard vibration pattern
-    tag: data.tag, // Use a tag to replace existing notifications if desired
-    data: data.data || { url: '/' } // Custom data, like a URL to open on click
+  // Aurora forecast & substorm forecast use aurora icon set
+  if (key.startsWith('aurora-') || key === 'substorm-forecast') {
+    return {
+      icon: '/icons/aurora_icon192.png',
+      badge: '/icons/aurora_icon72.png',
+    };
+  }
+
+  // Default app icons (same as before)
+  return {
+    icon: '/icons/android-chrome-192x192.png',
+    badge: '/icons/android-chrome-192x192.png',
+  };
+}
+
+// MODIFIED: The install event now pre-caches the static background images.
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(STATIC_ASSETS_CACHE_NAME).then((cache) => {
+      console.log('Service Worker: Pre-caching static assets.');
+      // Use addAll with a catch to prevent a single failed image from breaking the entire SW install
+      return cache.addAll(STATIC_ASSETS_TO_CACHE).catch(error => {
+        console.error('Service Worker: Failed to cache one or more static assets during install.', error);
+      });
+    }).then(() => {
+      return self.skipWaiting();
+    })
+  );
+});
+
+// MODIFIED: The activate event now correctly manages multiple caches.
+self.addEventListener('activate', (event) => {
+  const allowedCaches = [APP_CACHE_NAME, STATIC_ASSETS_CACHE_NAME];
+  event.waitUntil((async () => {
+    const cacheNames = await caches.keys();
+    await Promise.all(
+      cacheNames.map(cacheName => {
+        if (!allowedCaches.includes(cacheName)) {
+          console.log('Service Worker: Deleting old cache:', cacheName);
+          return caches.delete(cacheName);
+        }
+      })
+    );
+    await self.clients.claim();
+  })());
+});
+
+// MODIFIED: The fetch event now uses a cache-first strategy for static images
+// and a network-only strategy for everything else.
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // Check if the request is for one of our static, cacheable assets
+  if (STATIC_ASSETS_TO_CACHE.includes(url.pathname) || STATIC_ASSETS_TO_CACHE.includes(url.href)) {
+    event.respondWith(
+      caches.open(STATIC_ASSETS_CACHE_NAME).then(cache => {
+        return cache.match(event.request).then(cachedResponse => {
+          // Return from cache if found
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          // Otherwise, fetch from network, cache it, and return the response
+          return fetch(event.request).then(networkResponse => {
+            cache.put(event.request, networkResponse.clone());
+            return networkResponse;
+          });
+        });
+      })
+    );
+    return; // End execution for this request
+  }
+
+  // For all other requests, use the original network-only strategy
+  event.respondWith(
+    fetch(event.request).catch(() =>
+      new Response('<h1>Network Error</h1><p>Please check your internet connection.</p>', {
+        headers: { 'Content-Type': 'text/html' }, status: 503, statusText: 'Service Unavailable'
+      })
+    )
+  );
+});
+
+
+self.addEventListener('push', (event) => {
+  const show = async (payload) => {
+    const title = payload?.title || 'Spot The Aurora';
+
+    // Accept category/tag from payload for better grouping/stacking
+    const tagFromPayload =
+      (payload && (payload.tag || payload.category || payload.topic)) || DEFAULT_TAG;
+
+    // Choose icons based on the resolved category/tag/topic
+    const { icon, badge } = chooseIcons(tagFromPayload);
+
+    const options = {
+      body: payload?.body || GENERIC_BODY,
+      icon,
+      badge,
+      vibrate: [200, 100, 200],
+      tag: String(tagFromPayload),
+      renotify: false,
+      // Keep a suggested URL (can be overridden by payload.data.url)
+      data: { url: (payload && payload.data && payload.data.url) || '/' },
+    };
+
+    try {
+      // Close any existing notification with the same tag (prevents stacking spam if desired)
+      const existing = await self.registration.getNotifications({ tag: options.tag });
+      existing.forEach(n => n.close());
+    } catch {}
+    await self.registration.showNotification(title, options);
   };
 
-  // `event.waitUntil` ensures the service worker stays alive until the promise resolves,
-  // preventing it from being terminated before the notification is shown.
-  event.waitUntil(
-    self.registration.showNotification(title, options).catch((error) => {
-      console.error('[Service Worker] Error showing notification:', error);
-    })
-  );
-});
-
-// --- New: Notification Click Handling ---
-
-self.addEventListener('notificationclick', (event) => {
-  console.log('[Service Worker] Notification click received!', event);
-
-  event.notification.close(); // Close the notification once clicked
-
-  // This prevents the service worker from being terminated until the client is focused/opened
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Check if there's already an open window for the app
-      for (const client of clientList) {
-        if (client.url.includes(self.location.origin) && 'focus' in client) {
-          // If the app is open, focus it
-          return client.focus();
+  const run = (async () => {
+    try {
+      // 1) Prefer encrypted payload (common path)
+      if (event.data) {
+        try {
+          const json = event.data.json();
+          await show(json);
+          return;
+        } catch {
+          const text = await event.data.text().catch(() => '');
+          await show({ title: 'Spot The Aurora', body: text || GENERIC_BODY });
+          return;
         }
       }
-      // If the app is not open, open a new window/tab
-      // Use the URL from the notification data, or default to home
-      const urlToOpen = event.notification.data.url || '/';
-      return clients.openWindow(urlToOpen);
-    })
-  );
+
+      // 2) No payload: fallback fetch with small retry window
+      for (let i = 0; i < RETRY_DELAYS.length; i++) {
+        if (i > 0) await new Promise(r => setTimeout(r, RETRY_DELAYS[i]));
+        for (const base of FALLBACK_ENDPOINTS) {
+          const url = `${base}?ts=${Date.now()}&rnd=${Math.random().toString(36).slice(2)}`;
+          try {
+            const res = await fetch(url, { mode: 'cors', cache: 'no-store' });
+            if (!res.ok) continue;
+            const ct = (res.headers.get('content-type') || '').toLowerCase();
+            if (!ct.includes('application/json')) continue;
+            const data = await res.json();
+            await show(data);
+            return;
+          } catch {}
+        }
+      }
+
+      // 3) Final generic fallback
+      await show(null);
+    } catch {
+      await show(null);
+    }
+  })();
+
+  event.waitUntil(run);
 });
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const urlToOpen = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil((async () => {
+    const allClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of allClients) {
+      if (client.url.startsWith(self.location.origin) && 'focus' in client) return client.focus();
+    }
+    if (clients.openWindow) return clients.openWindow(urlToOpen);
+  })());
+});
+
+// --- END OF FILE public/sw.js ---

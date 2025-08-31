@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'; // Import useRef
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { SightingReport, SightingStatus } from '../types';
@@ -6,25 +6,48 @@ import LoadingSpinner from './icons/LoadingSpinner';
 import GuideIcon from './icons/GuideIcon';
 import CloseIcon from './icons/CloseIcon';
 
+// --- Local SVG Icon components for the UI ---
+const GreenCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+    </svg>
+);
+
+const RedCrossIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+);
+
+
 // --- CONSTANTS & CONFIG ---
 const API_URL = 'https://aurora-sightings.thenamesrock.workers.dev/';
 const LOCAL_STORAGE_USERNAME_KEY = 'aurora_sighting_username';
 const LOCAL_STORAGE_LAST_REPORT_KEY = 'aurora_sighting_last_report';
-const REPORTING_COOLDOWN_MS = 60 * 60 * 1000;
+const REPORTING_COOLDOWN_MS = 5 * 60 * 1000;
 
 const NZ_BOUNDS: L.LatLngBoundsLiteral = [[-48, 166], [-34, 179]];
 const MAP_ZOOM = 5;
 const HIGHLIGHT_MAP_ZOOM = 10;
 
-const STATUS_OPTIONS: { status: SightingStatus; emoji: string; label: string; description: string; }[] = [
-    { status: 'eye', emoji: '👁️', label: 'Naked Eye', description: 'Visible without a camera. You can see distinct shapes, structure, or even color with your eyes alone.' },
-    { status: 'phone', emoji: '📱', label: 'Phone Camera', description: 'Not visible to your eyes, but shows up clearly in a modern smartphone photo (e.g., a 3-second night mode shot).' },
-    { status: 'dslr', emoji: '📷', label: 'DSLR/Mirrorless', description: 'Only visible with a dedicated camera (DSLR/Mirrorless) on a tripod using a long exposure (e.g., >5 seconds).' },
-    { status: 'cloudy', emoji: '☁️', label: 'Cloudy', description: 'Your view of the sky is mostly or completely obscured by clouds, preventing any possible sighting.' },
-    { status: 'nothing', emoji: '❌', label: 'Nothing', description: 'The sky is clear, but no aurora is visible in any form (neither by eye nor by camera). Reporting nothing is very important data!' },
+const STATUS_OPTIONS: { status: SightingStatus; emoji: string; label: string; description: string; category: 'visible' | 'nothing' | 'other' }[] = [
+    { status: 'eye', emoji: '👁️', label: 'Naked Eye', description: 'Visible without a camera. You can see distinct shapes, structure, or even color with your eyes alone.', category: 'visible' },
+    { status: 'phone', emoji: '📱', label: 'Phone Camera', description: 'Not visible to your eyes, but shows up clearly in a modern smartphone photo (e.g., a 3-second night mode shot).', category: 'visible' },
+    { status: 'dslr', emoji: '📷', label: 'DSLR/Mirrorless', description: 'Only visible with a dedicated camera (DSLR/Mirrorless) on a tripod using a long exposure (e.g., >5 seconds).', category: 'visible' },
+    { status: 'nothing-eye', emoji: '👁️', label: 'Naked Eye', description: 'The sky is clear, but no aurora is visible to your eyes. Reporting this is very helpful!', category: 'nothing' },
+    { status: 'nothing-phone', emoji: '📱', label: 'Phone Camera', description: 'The sky is clear, but no aurora is visible in a smartphone photo.', category: 'nothing' },
+    { status: 'nothing-dslr', emoji: '📷', label: 'DSLR/Mirrorless', description: 'The sky is clear, but no aurora is visible in a long-exposure shot.', category: 'nothing' },
+    { status: 'cloudy', emoji: '☁️', label: 'Cloudy', description: 'Your view of the sky is mostly or completely obscured by clouds, preventing any possible sighting.', category: 'other' },
 ];
 
-const getEmojiForStatus = (status: SightingStatus) => STATUS_OPTIONS.find(opt => opt.status === status)?.emoji || '❓';
+const getEmojiForStatus = (status: SightingStatus) => {
+    const option = STATUS_OPTIONS.find(opt => opt.status === status);
+    if (!option) return '❓';
+    if (status.startsWith('nothing-')) {
+        return `❌${option.emoji}`;
+    }
+    return option.emoji;
+};
 
 interface AuroraSightingsProps {
   isDaylight: boolean;
@@ -96,14 +119,23 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
                     </section>
                      <section>
                         <h4 className="font-semibold text-base text-neutral-200 mb-2">What Should I Report?</h4>
-                        <p>Honest reports are crucial for everyone! Please use the following guide to choose the best option for your situation.</p>
+                        <p>Honest reports are crucial for everyone! Use the green check <GreenCheckIcon className="w-4 h-4 inline-block text-green-500" /> for positive sightings and the red cross <RedCrossIcon className="w-4 h-4 inline-block text-red-500" /> for clear skies with no aurora.</p>
                         <ul className="mt-3 space-y-3">
-                            {STATUS_OPTIONS.map(({ emoji, label, description }) => (
+                            {STATUS_OPTIONS.filter(opt => opt.category === 'visible').map(({ emoji, label, description }) => (
                                 <li key={label} className="flex items-start gap-4">
                                     <span className="text-3xl mt-[-4px]">{emoji}</span>
                                     <div> <strong className="font-semibold text-neutral-200">{label}</strong> <p className="text-neutral-400">{description}</p> </div>
                                 </li>
                             ))}
+                             <li className="flex items-start gap-4">
+                                <span className="text-3xl mt-[-4px]">❌</span>
+                                {/* MODIFIED: Updated text to describe the layered icon */}
+                                <div> <strong className="font-semibold text-neutral-200">Nothing (per category)</strong> <p className="text-neutral-400">If your sky is clear but you can't see an aurora, please report it! This is extremely valuable data. On the map, these reports will show as a cross layered on top of the category icon.</p> </div>
+                            </li>
+                             <li className="flex items-start gap-4">
+                                <span className="text-3xl mt-[-4px]">☁️</span>
+                                <div> <strong className="font-semibold text-neutral-200">Cloudy</strong> <p className="text-neutral-400">If your view is obscured by clouds, preventing any possible sighting, please report it as cloudy.</p> </div>
+                            </li>
                         </ul>
                     </section>
                 </div>
@@ -179,7 +211,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                 !userName.trim() && 'Please enter your name.',
                 !userPosition && 'Please set your location by clicking the map or enabling GPS.',
                 !selectedStatus && 'Please select your sighting status.',
-                !canSubmit && (isDaylight ? 'Sighting reports are disabled during daylight hours.' : 'You can only report once per hour.')
+                !canSubmit && (isDaylight ? 'Sighting reports are disabled during daylight hours.' : `You can only report once every ${REPORTING_COOLDOWN_MS / 60000} minutes.`)
             ].filter(Boolean).join('\n');
             if (alertMsg) alert(alertMsg);
             return;
@@ -195,7 +227,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
             const response = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reportData) });
             const result = await response.json();
             if (!response.ok) throw new Error(result.error || 'Submission failed.');
-            const newReportInfo = { timestamp: Date.now(), key: result.key }; // Note: result.key may be undefined now, which is fine.
+            const newReportInfo = { timestamp: Date.now(), key: result.key };
             setLastReportInfo(newReportInfo);
             localStorage.setItem(LOCAL_STORAGE_LAST_REPORT_KEY, JSON.stringify(newReportInfo));
             await fetchSightings();
@@ -212,10 +244,33 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
     }, []);
 
     const userMarkerIcon = L.divIcon({ html: `<div class="relative flex h-5 w-5"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span><span class="relative inline-flex rounded-full h-5 w-5 bg-sky-500 border-2 border-white"></span></div>`, className: '', iconSize: [20, 20], iconAnchor: [10, 10], });
+    
+    // MODIFIED: This function now creates a layered icon for "nothing" reports
     const createSightingIcon = (sighting: SightingReport) => {
-        const emoji = getEmojiForStatus(sighting.status);
+        const fullEmojiString = getEmojiForStatus(sighting.status);
         const sendingAnimation = sighting.isPending ? `<div class="absolute inset-0 flex items-center justify-center text-white text-xs animate-pulse">sending...</div><div class="absolute inset-0 bg-black rounded-full opacity-60"></div>` : '';
-        return L.divIcon({ html: `<div class="relative">${sendingAnimation}<div>${emoji}</div></div>`, className: 'emoji-marker', iconSize: [32, 32], iconAnchor: [16, 16], });
+        
+        let iconHtml: string;
+
+        if (fullEmojiString.startsWith('❌')) {
+            const baseEmoji = fullEmojiString.substring(1);
+            iconHtml = `
+                <div class="relative w-full h-full flex items-center justify-center">
+                    ${sendingAnimation}
+                    <span class="absolute text-3xl">${baseEmoji}</span>
+                    <span class="absolute text-3xl" style="text-shadow: 0 0 4px #000, 0 0 6px #000;">❌</span>
+                </div>
+            `;
+        } else {
+            iconHtml = `<div class="relative">${sendingAnimation}<div>${fullEmojiString}</div></div>`;
+        }
+
+        return L.divIcon({ 
+            html: iconHtml, 
+            className: 'emoji-marker', 
+            iconSize: [32, 32], 
+            iconAnchor: [16, 16] 
+        });
     };
 
     return (
@@ -230,27 +285,61 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                 <p className="text-neutral-400 mt-1 max-w-2xl mx-auto">Help the community by reporting what you see (or don't see!) from all over NZ. Honest reports, including clouds or clear skies with no aurora, are essential for everyone.</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center bg-neutral-900 p-4 rounded-lg relative">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-neutral-900 p-4 rounded-lg relative">
                 {isDaylight && (
                     <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-center rounded-lg z-10">
                         <p className="text-amber-400 font-semibold text-lg text-center p-4">Reporting is disabled during daylight hours</p>
                     </div>
                 )}
-                <input type="text" value={userName} onChange={handleNameChange} placeholder="Your Name (required)" className="col-span-1 bg-neutral-800 border border-neutral-700 text-white rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-500"/>
-                <div className="col-span-1 md:col-span-2 grid grid-cols-2 lg:grid-cols-6 gap-2 items-center">
-                    <div className="col-span-2 lg:col-span-5 flex flex-wrap justify-center gap-2">
-                        {STATUS_OPTIONS.map(({ status, emoji, label }) => (
-                            <button key={status} onClick={() => setSelectedStatus(status)} className={`px-3 py-2 rounded-lg border-2 transition-all text-sm flex items-center gap-2 ${selectedStatus === status ? 'border-sky-400 bg-sky-500/20' : 'border-neutral-700 bg-neutral-800 hover:bg-neutral-700'}`} title={label}>
-                                <span className="text-lg">{emoji}</span>
-                                <span className="hidden sm:inline">{label}</span>
-                            </button>
-                        ))}
+                <input type="text" value={userName} onChange={handleNameChange} placeholder="Your Name (required)" className="col-span-12 md:col-span-3 bg-neutral-800 border border-neutral-700 text-white rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-500"/>
+                
+                <div className="col-span-12 md:col-span-9 space-y-4">
+                    <div>
+                        <p className="text-sm font-semibold text-neutral-300 mb-2 text-center md:text-left flex items-center justify-center md:justify-start gap-2">
+                            <GreenCheckIcon className="w-5 h-5 text-green-500" />
+                            I SAW something with my:
+                        </p>
+                        <div className="flex flex-wrap justify-center md:justify-start gap-2">
+                            {STATUS_OPTIONS.filter(opt => opt.category === 'visible').map(({ status, emoji, label }) => (
+                                <button key={status} onClick={() => setSelectedStatus(status)} className={`px-3 py-2 rounded-lg border-2 transition-all text-sm flex items-center gap-2 ${selectedStatus === status ? 'border-sky-400 bg-sky-500/20' : 'border-neutral-700 bg-neutral-800 hover:bg-neutral-700'}`} title={label}>
+                                    <span className="text-lg">{emoji}</span>
+                                    <span className="hidden sm:inline">{label}</span>
+                                </button>
+                            ))}
+                        </div>
                     </div>
-                     <button onClick={handleSubmit} disabled={!canSubmit || isSubmitting} className="col-span-2 lg:col-span-1 w-full px-4 py-2 rounded-lg text-white font-semibold transition-colors disabled:bg-neutral-600 disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500">
-                        {isSubmitting ? <LoadingSpinner /> : 'Submit'}
-                    </button>
+                    <div>
+                        <p className="text-sm font-semibold text-neutral-300 mb-2 text-center md:text-left flex items-center justify-center md:justify-start gap-2">
+                            <RedCrossIcon className="w-5 h-5 text-red-500" />
+                            The sky is CLEAR, but I SAW NOTHING with my:
+                        </p>
+                        <div className="flex flex-wrap justify-center md:justify-start gap-2">
+                            {STATUS_OPTIONS.filter(opt => opt.category === 'nothing').map(({ status, emoji, label }) => (
+                                <button key={status} onClick={() => setSelectedStatus(status)} className={`px-3 py-2 rounded-lg border-2 transition-all text-sm flex items-center gap-2 ${selectedStatus === status ? 'border-sky-400 bg-sky-500/20' : 'border-neutral-700 bg-neutral-800 hover:bg-neutral-700'}`} title={`Report clear sky but no aurora visible to ${label}`}>
+                                    <span className="text-lg">{emoji}</span>
+                                    <span className="hidden sm:inline">{label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 border-t border-neutral-700/50">
+                        <div className="flex-grow">
+                            <p className="text-sm font-semibold text-neutral-300 mb-2 text-center sm:text-left">My view is:</p>
+                            <div className="flex flex-wrap justify-center sm:justify-start gap-2">
+                                {STATUS_OPTIONS.filter(opt => opt.category === 'other').map(({ status, emoji, label }) => (
+                                    <button key={status} onClick={() => setSelectedStatus(status)} className={`px-3 py-2 rounded-lg border-2 transition-all text-sm flex items-center gap-2 ${selectedStatus === status ? 'border-sky-400 bg-sky-500/20' : 'border-neutral-700 bg-neutral-800 hover:bg-neutral-700'}`} title={label}>
+                                        <span className="text-lg">{emoji}</span>
+                                        <span className="hidden sm:inline">{label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <button onClick={handleSubmit} disabled={!canSubmit || isSubmitting} className="w-full sm:w-auto px-6 py-3 rounded-lg text-white font-semibold transition-colors disabled:bg-neutral-600 disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500 mt-4 sm:mt-0">
+                            {isSubmitting ? <LoadingSpinner /> : 'Submit Report'}
+                        </button>
+                    </div>
                 </div>
-                {cooldownRemaining > 0 && !isDaylight && <p className="col-span-1 md:col-span-3 text-center text-xs text-amber-400 mt-2">You can submit again in {Math.ceil(cooldownRemaining / 60000)} minutes.</p>}
+                {cooldownRemaining > 0 && !isDaylight && <p className="col-span-12 text-center text-xs text-amber-400 mt-2">You can submit again in {Math.ceil(cooldownRemaining / 60000)} minutes.</p>}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -292,7 +381,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight }) => {
                                         }}
                                     >
                                         <Popup>
-                                            <strong>{sighting.name}</strong> saw: {getEmojiForStatus(sighting.status)} <br/> Reported at {new Date(sighting.timestamp).toLocaleTimeString('en-NZ')}
+                                            <strong>{sighting.name}</strong> reported: {getEmojiForStatus(sighting.status)} <br/> at {new Date(sighting.timestamp).toLocaleTimeString('en-NZ')}
                                         </Popup>
                                     </Marker>
                                 );

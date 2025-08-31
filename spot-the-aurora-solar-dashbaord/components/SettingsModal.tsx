@@ -7,7 +7,9 @@ import {
   getNotificationPreference, 
   setNotificationPreference,
   requestNotificationPermission,
-  sendTestNotification 
+  sendTestNotification,
+  subscribeUserToPush,
+  updatePushSubscriptionPreferences // IMPORT THE NEW FUNCTION
 } from '../utils/notifications.ts';
 
 interface SettingsModalProps {
@@ -18,12 +20,17 @@ interface SettingsModalProps {
 }
 
 const NOTIFICATION_CATEGORIES = [
-  { id: 'aurora-50percent', label: 'Aurora Forecast ≥ 50%' },
-  { id: 'aurora-80percent', label: 'Aurora Forecast ≥ 80%' },
-  { id: 'flare-M1', label: 'Solar Flare M-Class (≥ M1.0)' },
-  { id: 'flare-M5', label: 'Solar Flare M5-Class (≥ M5.0)' },
-  { id: 'flare-X1', label: 'Solar Flare X-Class (≥ X1.0)' },
-  { id: 'substorm-eruption', label: 'Substorm Eruption Detected' },
+  { id: 'aurora-40percent', label: 'Aurora Forecast ≥ 40% (Phone Visible)' },
+  { id: 'aurora-50percent', label: 'Aurora Forecast ≥ 50% (Faint Eye Visible)' },
+  { id: 'aurora-60percent', label: 'Aurora Forecast ≥ 60% (Eye Visible)' },
+  { id: 'aurora-80percent', label: 'Aurora Forecast ≥ 80% (Strong Display)' },
+  { id: 'flare-M1', label: 'Solar Flare ≥ M1-Class' },
+  { id: 'flare-M5', label: 'Solar Flare ≥ M5-Class' },
+  { id: 'flare-X1', label: 'Solar Flare ≥ X1-Class' },
+  { id: 'flare-X5', label: 'Solar Flare ≥ X5-Class' },
+  { id: 'flare-X10', label: 'Solar Flare ≥ X10-Class (Historic)' },
+  { id: 'flare-peak', label: 'Solar Flare Peak & Decline Alerts' },
+  { id: 'substorm-forecast', label: 'Substorm Forecast Issued' },
 ];
 
 const LOCATION_PREF_KEY = 'location_preference_use_gps_autodetect';
@@ -47,18 +54,24 @@ const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const HeartIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.015-4.5-4.5-4.5S12 5.765 12 8.25c0-2.485-2.015-4.5-4.5-4.5S3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+    </svg>
+);
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersion, onShowTutorial }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
+  const [isSubscribing, setIsSubscribing] = useState(false);
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
   const [useGpsAutoDetect, setUseGpsAutoDetect] = useState<boolean>(true);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstallable, setIsAppInstallable] = useState<boolean>(false);
   const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
-  const [isCopied, setIsCopied] = useState(false); // State for copy button feedback
 
   useEffect(() => {
     if (isOpen) {
-      if (!('Notification' in window)) {
+      if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
         setNotificationStatus('unsupported');
       } else {
         setNotificationStatus(Notification.permission);
@@ -99,14 +112,27 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
     setIsAppInstalled(isStandalone || isPWA);
   }, []);
   
-  const handleRequestPermission = useCallback(async () => {
+  const handleEnableNotifications = useCallback(async () => {
+    setIsSubscribing(true);
     const permission = await requestNotificationPermission();
     setNotificationStatus(permission);
+
+    if (permission === 'granted') {
+      const subscription = await subscribeUserToPush();
+      if (subscription) {
+        console.log("Successfully subscribed to push notifications.");
+      } else {
+        console.error("Failed to get a push subscription.");
+      }
+    }
+    setIsSubscribing(false);
   }, []);
 
   const handleNotificationToggle = useCallback((id: string, checked: boolean) => {
     setNotificationSettings(prev => ({ ...prev, [id]: checked }));
     setNotificationPreference(id, checked);
+    // THIS IS THE FIX: Call the new function to sync changes with the server.
+    updatePushSubscriptionPreferences();
   }, []);
 
   const handleGpsToggle = useCallback((checked: boolean) => {
@@ -127,17 +153,52 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
       console.error('Error during app installation:', error);
     }
   }, [deferredPrompt]);
+  
+  const handleTestCategory = useCallback((categoryId: string) => {
+    let title = 'Test Notification';
+    let body = 'This is a sample alert for your selected category.';
 
-  // --- NEW: Handler for copying bank account number ---
-  const handleCopy = useCallback(() => {
-    const accountNumber = '12-3168-0005239-53';
-    navigator.clipboard.writeText(accountNumber).then(() => {
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000); // Reset after 2 seconds
-    }).catch(err => {
-      console.error('Failed to copy text: ', err);
-    });
+    switch (categoryId) {
+        case 'aurora-40percent':
+            title = 'Aurora Alert: Phone Visible!';
+            body = 'Forecast has reached 42%. Good chance to capture with a phone camera.';
+            break;
+        case 'aurora-50percent':
+            title = 'Aurora Alert: Faint Eye Visibility!';
+            body = 'Forecast has reached 51%. A faint glow may be visible to the naked eye.';
+            break;
+        case 'aurora-60percent':
+            title = 'Aurora Alert: Eye Visible!';
+            body = 'Forecast has reached 65%. Good chance of naked-eye visibility.';
+            break;
+        case 'aurora-80percent':
+            title = 'Major Aurora Alert!';
+            body = 'Forecast has reached 82%! A significant display is likely!';
+            break;
+        case 'flare-M1':
+            title = 'Solar Flare: ≥M1-Class';
+            body = 'An M1.3 flare is in progress. Minor radio blackouts possible.';
+            break;
+        case 'flare-M5':
+            title = 'Major Flare: ≥M5-Class';
+            body = 'A strong M5.8 flare is in progress. Moderate radio blackouts likely.';
+            break;
+        case 'flare-X1':
+            title = 'Significant Flare: ≥X1-Class';
+            body = 'A powerful X1.2 flare is in progress. Strong, widespread radio blackouts expected.';
+            break;
+        case 'flare-X5':
+            title = 'Extreme Flare: ≥X5-Class';
+            body = 'An extreme X5.1 flare is in progress. Severe radio blackouts and radiation storms possible.';
+            break;
+        case 'substorm-forecast':
+            title = 'Substorm Forecast Issued';
+            body = 'Forecast: ~75% chance of activity between 11:30pm and 12:00am. Expected visibility: Faint Eye Visible.';
+            break;
+    }
+    sendTestNotification(title, body);
   }, []);
+
 
   if (!isOpen) return null;
 
@@ -158,7 +219,27 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
         </div>
         
         <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-8 flex-1">
-          {/* App Installation Section */}
+          <section>
+            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Project</h3>
+            <div className="text-sm text-neutral-400 mb-4 space-y-3">
+                <p>
+                    This application is a passion project, built and maintained by one person with over <strong>340 hours</strong> of development time invested. To provide the best user experience, this app will <strong>always be ad-free</strong>.
+                </p>
+                <p>
+                    However, there are real costs for server hosting, domain registration, and API services. If you find this tool useful and appreciate the ad-free experience, please consider supporting its continued development and operational costs.
+                </p>
+            </div>
+            <a 
+              href="https://buymeacoffee.com/spottheaurora"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-3 w-full px-4 py-3 bg-yellow-500/20 border border-yellow-400/50 rounded-lg text-yellow-200 hover:bg-yellow-500/30 hover:border-yellow-300 transition-colors font-semibold"
+            >
+              <HeartIcon className="w-6 h-6 text-yellow-300" />
+              <span>Support on Buy Me a Coffee</span>
+            </a>
+          </section>
+
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">App Installation</h3>
             {isAppInstalled ? (
@@ -183,33 +264,63 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             )}
           </section>
 
-          {/* Notification Section */}
           <section>
-            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Notifications</h3>
-            {notificationStatus === 'unsupported' && <p className="text-red-400 text-sm mb-4">Your browser does not support web notifications.</p>}
-            {notificationStatus === 'denied' && <div className="bg-red-900/30 border border-red-700/50 rounded-md p-3 mb-4 text-sm"><p className="text-red-300">Notification permission denied. Please enable them in your browser settings to receive future alerts.</p></div>}
+            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Push Notifications</h3>
+            {notificationStatus === 'unsupported' && <p className="text-red-400 text-sm mb-4">Your browser or device does not support push notifications.</p>}
+            
+            {notificationStatus === 'denied' && (
+              <div className="bg-red-900/30 border border-red-700/50 rounded-md p-3 mb-4 text-sm">
+                <p className="text-red-300">Notification permission was denied. You must enable them in your browser or system settings to receive alerts.</p>
+              </div>
+            )}
+
             {notificationStatus === 'default' && (
               <div className="bg-orange-900/30 border border-orange-700/50 rounded-md p-3 mb-4 text-sm">
-                <p className="text-orange-300 mb-2">Enable notifications to be alerted of major space weather events.</p>
-                <button onClick={handleRequestPermission} className="px-3 py-1 bg-orange-600/50 border border-orange-500 rounded-md text-white hover:bg-orange-500/50 text-xs">Enable Notifications</button>
+                <p className="text-orange-300 mb-3">Enable push notifications to be alerted of major space weather events, even when the app is closed.</p>
+                <button 
+                  onClick={handleEnableNotifications} 
+                  disabled={isSubscribing}
+                  className="px-4 py-2 bg-orange-600/50 border border-orange-500 rounded-md text-white hover:bg-orange-500/50 disabled:opacity-50 disabled:cursor-wait"
+                >
+                  {isSubscribing ? 'Subscribing...' : 'Enable Notifications'}
+                </button>
               </div>
             )}
             
             {notificationStatus === 'granted' && (
               <div className="space-y-4">
-                <p className="text-green-400 text-sm">Notifications are enabled.</p>
-                <div className="bg-neutral-800/50 border border-neutral-700/50 rounded-md p-4 text-center">
-                    <h4 className="font-semibold text-neutral-300">Custom Alerts Coming Soon!</h4>
-                    <p className="text-sm text-neutral-400 mt-2">
-                        The ability to customize which alerts you receive is under development.
-                        For now, you are set to receive critical notifications.
-                    </p>
+                <div className="bg-green-900/30 border border-green-700/50 rounded-md p-3 text-sm">
+                    <p className="text-green-300">Push notifications are enabled! You can now customize your alerts below.</p>
+                </div>
+                <div className="space-y-3 bg-neutral-900/50 border border-neutral-700/60 rounded-lg p-4">
+                  {NOTIFICATION_CATEGORIES.map(category => (
+                    <div key={category.id} className="flex items-center justify-between gap-4">
+                      <ToggleSwitch
+                        label={category.label}
+                        checked={notificationSettings[category.id] ?? true}
+                        onChange={(checked) => handleNotificationToggle(category.id, checked)}
+                      />
+                      <button
+                        onClick={() => handleTestCategory(category.id)}
+                        className="flex-shrink-0 px-3 py-1 text-xs bg-sky-600/20 border border-sky-500/50 rounded-md text-sky-300 hover:bg-sky-500/30 transition-colors"
+                      >
+                        Test
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 flex justify-center">
+                    <button
+                        onClick={() => sendTestNotification()} // Sends a generic test
+                        className="px-4 py-2 text-sm bg-neutral-700 border border-neutral-600 rounded-md text-neutral-300 hover:bg-neutral-600 transition-colors"
+                    >
+                        Send Generic Test Notification
+                    </button>
                 </div>
               </div>
             )}
           </section>
 
-          {/* Location Settings Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Location Settings</h3>
             <p className="text-sm text-neutral-400 mb-4">Control how your location is determined for features like the Aurora Sighting Map.</p>
@@ -217,33 +328,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, appVersi
             <p className="text-xs text-neutral-500 mt-2">When enabled, the app will try to use your device's GPS. If disabled, you will be prompted to place your location manually on the map.</p>
           </section>
 
-          {/* --- MODIFIED: Support the Cause Section --- */}
-          <section>
-            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Cause</h3>
-            <p className="text-sm text-neutral-400 mb-4">
-              This application is a passion project, built and maintained by one person with over <strong>270 hours</strong> of development time invested. If you find it useful, please consider supporting its continued development and server costs.
-            </p>
-            <div className="bg-neutral-800/50 border border-neutral-700/50 rounded-lg p-4 space-y-2">
-              <div>
-                <span className="text-xs text-neutral-500">Account Name</span>
-                <p className="font-mono text-neutral-200">D P FRENCH</p>
-              </div>
-              <div>
-                <span className="text-xs text-neutral-500">Account Number</span>
-                <div className="flex items-center justify-between gap-4">
-                  <p className="font-mono text-neutral-200">12-3168-0005239-53</p>
-                  <button 
-                    onClick={handleCopy}
-                    className={`px-3 py-1 text-xs rounded-md transition-colors ${isCopied ? 'bg-green-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600 text-neutral-300'}`}
-                  >
-                    {isCopied ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* Help & Support Section */}
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Help & Support</h3>
             <p className="text-sm text-neutral-400 mb-4">

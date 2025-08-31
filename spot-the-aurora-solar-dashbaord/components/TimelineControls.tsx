@@ -66,7 +66,8 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
 
 
   return (
-    <div className={`fixed bottom-5 left-1/2 -translate-x-1/2 w-11/12 lg:w-4/5 lg:max-w-3xl bg-neutral-950/80 backdrop-blur-md border border-neutral-800/90 rounded-lg p-3 shadow-xl text-neutral-300 space-y-2`}>
+    // MODIFIED: Added an ID to the main container for the tutorial to target
+    <div id="timeline-controls-container" className={`fixed bottom-5 left-1/2 -translate-x-1/2 w-11/12 lg:w-4/5 lg:max-w-3xl bg-neutral-950/80 backdrop-blur-md border border-neutral-800/90 rounded-lg p-3 shadow-xl text-neutral-300 space-y-2`}>
       <div className="flex items-center space-x-2 md:space-x-3">
         <label htmlFor="timeline-scrubber" className="hidden md:block text-sm font-medium whitespace-nowrap">Time Control:</label>
         <PlaybackButton id="timeline-back-step-button" onClick={() => onStepFrame(-1)} title="Previous Frame"><PrevIcon className="w-4 h-4" /></PlaybackButton>
@@ -83,7 +84,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
             max="1000"
             value={scrubberValue}
             onChange={(e) => onScrub(parseInt(e.target.value, 10))}
-            className="w-full h-1.5 bg-neutral-700/80 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-neutral-200 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-neutral-200"
+            className="w-full h-1.5 bg-neutral-700/80 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-neutral-200 [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-neutral-200"
             />
             {nowPositionPercent >= 0 && (
             <>
@@ -112,6 +113,8 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
         <SpeedButton id="timeline-speed-1x-button" onClick={() => onSetSpeed(1)} isActive={playbackSpeed === 1}>1x</SpeedButton>
         <SpeedButton id="timeline-speed-2x-button" onClick={() => onSetSpeed(2)} isActive={playbackSpeed === 2}>2x</SpeedButton>
         <SpeedButton id="timeline-speed-5x-button" onClick={() => onSetSpeed(5)} isActive={playbackSpeed === 5}>5x</SpeedButton>
+        <SpeedButton id="timeline-speed-10x-button" onClick={() => onSetSpeed(10)} isActive={playbackSpeed === 10}>10x</SpeedButton>
+        <SpeedButton id="timeline-speed-20x-button" onClick={() => onSetSpeed(20)} isActive={playbackSpeed === 20}>20x</SpeedButton>
       </div>
     </div>
   );
