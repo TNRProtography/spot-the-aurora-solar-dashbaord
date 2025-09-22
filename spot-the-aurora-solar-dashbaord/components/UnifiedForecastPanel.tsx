@@ -33,7 +33,7 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
   substormForecast
 }) => {
   const isDaylight = blurb.includes("The sun is currently up");
-  const { status, likelihood, windowLabel, action } = substormForecast;
+  const { status, likelihood, windowLabel, action } = substormForecast || { status: 'QUIET', likelihood: 0, windowLabel: '', action: '' };
   
   const isSubstormActive = status !== 'QUIET';
   const isSubstormImminent = status === 'IMMINENT_30' || status === 'ONSET';
@@ -59,18 +59,6 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
     return 'text-neutral-400';
   };
   
-  const getCombinedAction = () => {
-    if (isDaylight) {
-      return "The sun is currently up. Aurora visibility is not possible until after sunset. Check back later for an updated forecast!";
-    }
-    
-    if (isSubstormActive) {
-      return action;
-    }
-    
-    return blurb;
-  };
-  
   const likelihoodGrad = useMemo(() => {
     if (likelihood >= 80) return "from-emerald-400 to-green-600";
     if (likelihood >= 50) return "from-amber-400 to-orange-500";
@@ -78,9 +66,22 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
     return "from-neutral-600 to-neutral-700";
   }, [likelihood]);
 
+  // --- NEW: Logic for score-based "fuss" ---
+  const actionPanelStyle = useMemo(() => {
+    if (!isSubstormImminent || isDaylight || (score ?? 0) <= 0) {
+        return 'bg-neutral-900/50 border border-neutral-700/50';
+    }
+    if (score >= 50) {
+        return 'bg-red-900/30 border-2 border-red-500 animate-pulse';
+    }
+    if (score >= 25) {
+        return 'bg-red-900/20 border border-red-600';
+    }
+    return 'bg-neutral-900/50 border border-neutral-700/50';
+  }, [isSubstormImminent, isDaylight, score]);
+
   return (
     <div id="unified-forecast-section" className="col-span-12 card bg-neutral-950/80 p-6">
-      {/* MODIFIED: Removed the download button from this component's header */}
       <div className="flex justify-between items-center mb-4">
         <div className="flex items-center gap-3">
           <h2 className="text-2xl font-bold text-white">Spot The Aurora Forecast</h2>
@@ -125,7 +126,7 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
         </div>
 
         <div className="space-y-4">
-          {isSubstormActive && (
+          {isSubstormActive && !isDaylight && (score ?? 0) > 0 && (
             <div className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-700/50">
               <div className="flex justify-between items-start mb-3">
                 <div>
@@ -151,18 +152,29 @@ export const UnifiedForecastPanel: React.FC<UnifiedForecastPanelProps> = ({
             </div>
           )}
           
-          <div className={`rounded-lg p-4 ${isSubstormImminent ? 'bg-red-900/20 border border-red-700/50' : 'bg-neutral-900/50 border border-neutral-700/50'}`}>
+          <div className={`rounded-lg p-4 ${actionPanelStyle}`}>
             <div className="text-sm text-neutral-300 font-medium mb-1">
-              {isSubstormActive ? 'Recommended Action' : 'Current Conditions'}
+              Recommended Action
             </div>
             <p className="text-neutral-200">
-              {getCombinedAction()}
+              {action}
             </p>
           </div>
+
+          {!isDaylight && (
+            <div className="rounded-lg p-4 bg-neutral-900/50 border border-neutral-700/50">
+                <div className="text-sm text-neutral-300 font-medium mb-1">
+                Visibility
+                </div>
+                <p className="text-neutral-200">
+                {blurb}
+                </p>
+            </div>
+          )}
         </div>
       </div>
 
-      {isSubstormImminent && (
+      {isSubstormImminent && !isDaylight && (score ?? 0) > 0 && (
         <div className="mt-4 p-3 bg-gradient-to-r from-red-900/30 to-orange-900/30 border border-red-700/50 rounded-lg">
           <div className="flex items-center justify-center gap-2">
             <span className="animate-pulse text-red-400">⚡</span>
